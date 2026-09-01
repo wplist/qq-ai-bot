@@ -1,0 +1,2 @@
+websockets>=12,<16
+openai>=1.40

@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QQ AI 机器人控制台</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px;
+    font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: #0f1420; color: #e6e9f0;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: #8b93a7; font-size: 13px; margin-bottom: 20px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; }
+  .card {
+    background: #171e2e; border: 1px solid #232c42; border-radius: 12px;
+    padding: 16px 18px;
+  }
+  .card h2 { font-size: 15px; margin: 0 0 14px; color: #9fc3ff; }
+  .row { display: flex; align-items: center; gap: 10px; margin: 8px 0; flex-wrap: wrap; }
+  .row label { min-width: 88px; font-size: 13px; color: #8b93a7; }
+  input[type=text], input[type=password], input[type=number] {
+    flex: 1; min-width: 160px; padding: 8px 10px; border-radius: 8px;
+    border: 1px solid #2c3752; background: #0f1420; color: #e6e9f0; font-size: 13px;
+  }
+  button {
+    padding: 8px 14px; border-radius: 8px; border: none; cursor: pointer;
+    background: #2f6fdb; color: #fff; font-size: 13px;
+  }
+  button.secondary { background: #2c3752; }
+  button.danger { background: #a33; padding: 3px 10px; }
+  button:disabled { opacity: .5; cursor: wait; }
+  .status-line { margin: 8px 0 4px; font-size: 13px; color: #8b93a7; white-space: pre-wrap; }
+  .ok { color: #5fd08a; } .bad { color: #ff7b72; }
+  .big { font-size: 18px; font-weight: 600; }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; background:#555; }
+  .dot.on { background:#2ecc71; box-shadow:0 0 6px #2ecc71; }
+  .dot.off { background:#e74c3c; }
+  .tag { background:#232c42; border-radius:6px; padding:2px 8px; font-size:12px; margin-right:6px; color:#9fc3ff; }
+  .admin-item { display:flex; justify-content:space-between; align-items:center; background:#0f1420; border-radius:8px; padding:6px 10px; margin-top:6px; font-size:13px; }
+  code { background:#0f1420; padding:1px 6px; border-radius:4px; }
+</style>
+</head>
+<body>
+<h1>🤖 QQ AI 机器人控制台</h1>
+<div class="sub">机器人程序在本机运行时，此页面可配置一切：接口、密钥、管理员。改完即时生效，无需重启。</div>
+
+<div class="grid">
+  <!-- 运行状态 -->
+  <div class="card">
+    <h2>📊 运行状态</h2>
+    <div class="row"><span class="dot" id="dot"></span><span class="big" id="conn-text">加载中…</span></div>
+    <div class="status-line" id="status-detail">—</div>
+    <div class="status-line" id="status-extra">—</div>
+  </div>
+
+  <!-- NapCat 接口 -->
+  <div class="card">
+    <h2>🔗 NapCat 接口（机器人登录连接）</h2>
+    <div class="row"><label>WS 地址</label><input type="text" id="ws-url" placeholder="ws://127.0.0.1:3001"></div>
+    <div class="row"><label>Token</label><input type="password" id="ws-token" placeholder="留空 = 无鉴权"></div>
+    <div class="row">
+      <button id="btn-test-nc">测试连接</button>
+      <button class="secondary" id="btn-save-nc">保存并重连</button>
+    </div>
+    <div class="status-line" id="nc-result">测试后将显示当前登录的机器人小号</div>
+  </div>
+
+  <!-- AI 接口 -->
+  <div class="card">
+    <h2>🧠 智谱 GLM API</h2>
+    <div class="row"><label>API Key</label><input type="password" id="glm-key" placeholder=""></div>
+    <div class="row">
+      <button id="btn-test-glm">测试</button>
+      <button class="secondary" id="btn-save-glm">保存</button>
+    </div>
+    <div class="status-line" id="glm-result">当前 Key 会以打码形式显示在状态区</div>
+  </div>
+
+  <!-- 管理员 -->
+  <div class="card">
+    <h2>👑 管理员账号绑定</h2>
+    <div class="row">
+      <input type="number" id="admin-qq" placeholder="输入QQ号">
+      <button id="btn-add-admin">添加</button>
+    </div>
+    <div id="admin-list"></div>
+    <div class="status-line">管理员可在聊天中使用 /性格、/状态、群内 /清空记忆</div>
+  </div>
+</div>
+
+<script>
+const API = "http://127.0.0.1:8080";
+let admins = [];
+
+const $ = (id) => document.getElementById(id);
+
+async function call(path, body) {
+  const opts = body
+    ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+    : {};
+  const r = await fetch(API + path, opts);
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  return r.json();
+}
+
+function fmtMin(m) {
+  if (m < 60) return m + " 分钟";
+  return Math.floor(m / 60) + " 小时 " + (m % 60) + " 分";
+}
+
+async function refresh() {
+  let s;
+  try {
+    s = await call("/api/status");
+  } catch (e) {
+    $("dot").className = "dot off";
+    $("conn-text").textContent = "机器人程序未运行";
+    $("status-detail").textContent = "请到机器人目录运行 python bot.py 后刷新";
+    return;
+  }
+  const on = s.connected;
+  $("dot").className = "dot " + (on ? "on" : "off");
+  $("conn-text").textContent = on ? "机器人在线" : "NapCat 未连接";
+  $("status-detail").textContent =
+    "机器人小号：" + (s.bot_qq || "未知") + "（" + (s.bot_name || "—") + "）\n" +
+    "人格：" + s.persona.name + (s.persona.customized ? "（已自定义）" : "") +
+    " ｜ 模型：" + s.glm.model + "（effort=" + s.glm.effort + "）\n" +
+    "API Key：" + (s.glm.key_masked || "未配置 ⚠");
+  $("status-extra").textContent =
+    "运行 " + fmtMin(s.uptime_min) + " ｜ 会话 " + s.sessions + " 个 / " + s.messages + " 条记忆\n" +
+    "群聊回复：" + (s.group_enabled ? "开" : "关") + " ｜ 私聊回复：" + (s.private_enabled ? "开" : "关");
+  if (!$("ws-url").value) $("ws-url").value = s.napcat.ws_url;
+  if (!$("glm-key").placeholder.includes("****") && s.glm.key_masked)
+    $("glm-key").placeholder = "当前：" + s.glm.key_masked + "，输入新值替换";
+  admins = s.admins || [];
+  renderAdmins();
+}
+
+function renderAdmins() {
+  const box = $("admin-list");
+  box.innerHTML = "";
+  if (!admins.length) {
+    box.innerHTML = '<div class="status-line">尚未绑定管理员</div>';
+    return;
+  }
+  admins.forEach((qq) => {
+    const div = document.createElement("div");
+    div.className = "admin-item";
+    const span = document.createElement("span");
+    span.textContent = qq;
+    const btn = document.createElement("button");
+    btn.className = "danger"; btn.textContent = "删除";
+    btn.onclick = () => saveAdmins(admins.filter((a) => a !== qq));
+    div.append(span, btn);
+    box.append(div);
+  });
+}
+
+async function saveAdmins(list) {
+  try {
+    await call("/api/settings", { admins: list });
+    refresh();
+  } catch (e) { alert("保存失败：" + e.message); }
+}
+
+function bind(id, fn) {
+  $(id).onclick = async (ev) => {
+    const b = ev.target; b.disabled = true;
+    try { await fn(); } catch (e) { alert("操作失败：" + e.message); }
+    b.disabled = false;
+  };
+}
+
+bind("btn-test-nc", async () => {
+  $("nc-result").textContent = "测试中…";
+  const r = await call("/api/test-napcat", { ws_url: $("ws-url").value, access_token: $("ws-token").value });
+  $("nc-result").innerHTML = r.ok
+    ? '<span class="ok">✓ 连接成功</span> — 登录小号：' + r.qq + "（" + (r.nickname || "—") + "）"
+    : '<span class="bad">✗ ' + (r.message || "失败") + "</span>";
+});
+
+bind("btn-save-nc", async () => {
+  const r = await call("/api/settings", { napcat: { ws_url: $("ws-url").value, access_token: $("ws-token").value } });
+  $("nc-result").innerHTML = '<span class="ok">✓ 已保存并触发重连</span>（' + r.changed.join(", ") + "），稍候看左上状态";
+});
+
+bind("btn-test-glm", async () => {
+  $("glm-result").textContent = "调用 GLM-5.3 中，约需几秒…";
+  const key = $("glm-key").value.trim();
+  const r = await call("/api/test-glm", key ? { api_key: key } : {});
+  $("glm-result").innerHTML = r.ok
+    ? '<span class="ok">✓ 成功</span>（' + r.seconds + 's）模型回复：' + r.reply
+    : '<span class="bad">✗ ' + r.message + "</span>";
+});
+
+bind("btn-save-glm", async () => {
+  const key = $("glm-key").value.trim();
+  if (!key) { alert("请先输入新的 API Key"); return; }
+  await call("/api/settings", { glm: { api_key: key } });
+  $("glm-key").value = "";
+  $("glm-result").innerHTML = '<span class="ok">✓ API Key 已保存并生效</span>';
+  refresh();
+});
+
+bind("btn-add-admin", async () => {
+  const qq = parseInt($("admin-qq").value, 10);
+  if (!qq || admins.includes(qq)) { alert("请输入有效且未绑定的QQ号"); return; }
+  await saveAdmins([...admins, qq]);
+  $("admin-qq").value = "";
+});
+
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>

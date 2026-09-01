@@ -1,0 +1,13 @@
+# 含密钥与个人配置，绝不入库
+config.toml
+data/
+
+# 自动备份与缓存
+backups/
+__pycache__/
+*.pyc
+.zcode/
+
+# 系统杂物
+Thumbs.db
+.DS_Store

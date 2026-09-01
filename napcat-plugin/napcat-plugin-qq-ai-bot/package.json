@@ -1,0 +1,12 @@
+{
+  "name": "napcat-plugin-qq-ai-bot",
+  "version": "1.0.0",
+  "main": "index.mjs",
+  "plugin": "QQ AI 机器人",
+  "description": "QQ AI 聊天机器人（GLM）配置控制台：接口配置、API Key、管理员绑定、状态测试",
+  "author": "qq-ai-bot",
+  "napcat": {
+    "tags": ["工具", "AI"],
+    "minVersion": "4.14.0"
+  }
+}

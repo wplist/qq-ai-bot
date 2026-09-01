@@ -1,0 +1,53 @@
+# ============================================================
+# QQ AI 聊天机器人 配置文件
+# 使用方法：把本文件复制一份并重命名为 config.toml，再填写各项配置
+# ============================================================
+
+# ---------- NapCat 连接配置 ----------
+[napcat]
+# NapCat OneBot v11 正向 WebSocket 地址（在 NapCat WebUI 的网络配置里创建）
+# 默认端口 3001；如果连接失败，可尝试改成 ws://127.0.0.1:3001/onebot/v11/ws
+ws_url = "ws://127.0.0.1:3001"
+# 在 NapCat 网络配置中设置的鉴权 token，没设置就留空 ""
+access_token = ""
+
+# ---------- 智谱 GLM 大模型配置 ----------
+[glm]
+# 智谱开放平台 API Key（https://open.bigmodel.cn → 右上角「API密钥」）
+api_key = ""
+base_url = "https://open.bigmodel.cn/api/paas/v4"
+model = "glm-5.3"
+# 推理力度：low = 快速回复（聊天推荐）| high = 增强 | max = 深度思考（很慢，编程类任务用）
+reasoning_effort = "low"
+# 单次回复最大 token 数
+max_tokens = 4096
+# 调用超时（秒）
+timeout = 120
+
+# ---------- 机器人人格设定 ----------
+[persona]
+name = "小智"
+# {name} 会被自动替换成上面的名字
+system_prompt = """你是{name}，一个友善的AI聊天助手，生活在QQ里。
+聊天风格要求：
+- 轻松自然、口语化，像一位真人网友，不要大段说教
+- 回答简洁，能用一两句话说清楚的就不要长篇大论
+- 可以适当用一点表情符号，但不要过多
+- 不确定的事情就坦率说不确定，不要编造"""
+
+# ---------- 行为开关 ----------
+[behavior]
+# 群聊里 @机器人 时是否回复
+group_enabled = true
+# 好友私聊时是否自动回复
+private_enabled = true
+# 私聊白名单（QQ号列表），留空 [] = 回复所有私聊
+private_whitelist = []
+# 管理员QQ号列表，可使用 /状态、在群里 /清空记忆 等管理命令
+admin_users = []
+# 每个会话保留的最大对话轮数（1轮 = 一问一答），超出自动丢弃最早的
+max_history_turns = 20
+# 机器人回复统一添加的前缀，留空 "" 即无前缀
+reply_prefix = ""
+# 超长回复按多少字符分段发送
+segment_length = 3000
