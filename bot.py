@@ -99,7 +99,7 @@ def load_config(path: Path) -> dict:
     with open(path, "rb") as f:
         cfg = tomllib.load(f)
 
-    for section in ("napcat", "glm", "persona", "behavior"):
+    for section in ("napcat", "glm", "persona", "behavior", "launcher"):
         cfg.setdefault(section, {})
     napcat, glm, persona, behavior = cfg["napcat"], cfg["glm"], cfg["persona"], cfg["behavior"]
 
@@ -114,6 +114,7 @@ def load_config(path: Path) -> dict:
     persona.setdefault(
         "system_prompt", "你是{name}，一个友善的AI聊天助手，用轻松口语化的风格简洁回答问题。"
     )
+    cfg["launcher"].setdefault("napcat_dir", r"E:\NapCat\shell")
     behavior.setdefault("group_enabled", True)
     behavior.setdefault("private_enabled", True)
     behavior.setdefault("private_whitelist", [])
@@ -630,11 +631,17 @@ def mask_secret(s: str, keep: int = 8) -> str:
 
 
 class AdminAPI:
-    """本机管理 API（127.0.0.1:8080），供 NapCat WebUI 内嵌控制台页面跨域调用。"""
+    """机器人内部管理 API。
+
+    监听 127.0.0.1 的系统随机端口（不占用固定端口，退出即释放），
+    实际端口写入「插件目录/api.port」与「data/api.port」，
+    由 NapCat WebUI 插件（6099 同源路由）转发访问，浏览器不直接接触。
+    """
 
     def __init__(self, bot: QQGLMBot):
         self.bot = bot
         self.server = None
+        self.port = 0
 
     def start(self) -> None:
         from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -642,43 +649,17 @@ class AdminAPI:
         bot = self.bot
 
         class Handler(BaseHTTPRequestHandler):
-            def _cors(self) -> None:
-                self.send_header("Access-Control-Allow-Origin", "*")
-                self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-                self.send_header("Access-Control-Allow-Headers", "Content-Type")
-
             def _json(self, code: int, payload: dict) -> None:
                 body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
                 self.send_response(code)
-                self._cors()
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
 
-            def do_OPTIONS(self) -> None:  # CORS 预检
-                self.send_response(204)
-                self._cors()
-                self.end_headers()
-
             def do_GET(self) -> None:
                 if self.path.startswith("/api/status"):
                     self._json(200, bot.status_payload())
-                elif self.path == "/":
-                    # 双保险：即使 NapCat 插件不可用，控制台也能从 8080 直接访问
-                    page = ROOT / "napcat-plugin" / "napcat-plugin-qq-ai-bot" / "webui" / "index.html"
-                    try:
-                        body = page.read_bytes()
-                        code, ctype = 200, "text/html; charset=utf-8"
-                    except OSError:
-                        body = "控制台页面文件缺失".encode("utf-8")
-                        code, ctype = 500, "text/plain; charset=utf-8"
-                    self.send_response(code)
-                    self._cors()
-                    self.send_header("Content-Type", ctype)
-                    self.send_header("Content-Length", str(len(body)))
-                    self.end_headers()
-                    self.wfile.write(body)
                 else:
                     self._json(404, {"ok": False, "message": "not found"})
 
@@ -705,12 +686,27 @@ class AdminAPI:
                 pass
 
         try:
-            self.server = ThreadingHTTPServer(("127.0.0.1", 8080), Handler)
+            self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         except OSError as e:
-            logging.error("管理控制台 API 启动失败（8080 端口可能被占用）: %s", e)
+            logging.error("管理 API 启动失败: %s", e)
             return
+        self.port = self.server.server_address[1]
+        self._write_port_files()
         threading.Thread(target=self.server.serve_forever, daemon=True, name="admin-api").start()
-        logging.info("管理控制台 API 已就绪: http://127.0.0.1:8080")
+        logging.info("管理 API 已就绪（内部随机端口 %d，经 WebUI 插件同源转发）", self.port)
+
+    def _write_port_files(self) -> None:
+        """把随机端口写到两处：插件目录（WebUI 插件转发用）、data/（启动器检测用）。"""
+        plugin_dir = (
+            Path(self.bot.cfg["launcher"]["napcat_dir"])
+            / "plugins" / "napcat-plugin-qq-ai-bot"
+        )
+        for target in (plugin_dir / "api.port", DATA_DIR / "api.port"):
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(str(self.port), encoding="ascii")
+            except OSError:
+                pass
 
 
 # ---------------------------------------------------------------- 入口

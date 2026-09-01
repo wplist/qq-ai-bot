@@ -93,7 +93,7 @@
 </div>
 
 <script>
-const API = "http://127.0.0.1:8080";
+const API = "/plugin/napcat-plugin-qq-ai-bot/api";
 let admins = [];
 
 const $ = (id) => document.getElementById(id);
@@ -115,7 +115,7 @@ function fmtMin(m) {
 async function refresh() {
   let s;
   try {
-    s = await call("/api/status");
+    s = await call("/status");
   } catch (e) {
     $("dot").className = "dot off";
     $("conn-text").textContent = "机器人程序未运行";
@@ -162,7 +162,7 @@ function renderAdmins() {
 
 async function saveAdmins(list) {
   try {
-    await call("/api/settings", { admins: list });
+    await call("/settings", { admins: list });
     refresh();
   } catch (e) { alert("保存失败：" + e.message); }
 }
@@ -177,21 +177,21 @@ function bind(id, fn) {
 
 bind("btn-test-nc", async () => {
   $("nc-result").textContent = "测试中…";
-  const r = await call("/api/test-napcat", { ws_url: $("ws-url").value, access_token: $("ws-token").value });
+  const r = await call("/test-napcat", { ws_url: $("ws-url").value, access_token: $("ws-token").value });
   $("nc-result").innerHTML = r.ok
     ? '<span class="ok">✓ 连接成功</span> — 登录小号：' + r.qq + "（" + (r.nickname || "—") + "）"
     : '<span class="bad">✗ ' + (r.message || "失败") + "</span>";
 });
 
 bind("btn-save-nc", async () => {
-  const r = await call("/api/settings", { napcat: { ws_url: $("ws-url").value, access_token: $("ws-token").value } });
+  const r = await call("/settings", { napcat: { ws_url: $("ws-url").value, access_token: $("ws-token").value } });
   $("nc-result").innerHTML = '<span class="ok">✓ 已保存并触发重连</span>（' + r.changed.join(", ") + "），稍候看左上状态";
 });
 
 bind("btn-test-glm", async () => {
   $("glm-result").textContent = "调用 GLM-5.3 中，约需几秒…";
   const key = $("glm-key").value.trim();
-  const r = await call("/api/test-glm", key ? { api_key: key } : {});
+  const r = await call("/test-glm", key ? { api_key: key } : {});
   $("glm-result").innerHTML = r.ok
     ? '<span class="ok">✓ 成功</span>（' + r.seconds + 's）模型回复：' + r.reply
     : '<span class="bad">✗ ' + r.message + "</span>";
@@ -200,7 +200,7 @@ bind("btn-test-glm", async () => {
 bind("btn-save-glm", async () => {
   const key = $("glm-key").value.trim();
   if (!key) { alert("请先输入新的 API Key"); return; }
-  await call("/api/settings", { glm: { api_key: key } });
+  await call("/settings", { glm: { api_key: key } });
   $("glm-key").value = "";
   $("glm-result").innerHTML = '<span class="ok">✓ API Key 已保存并生效</span>';
   refresh();

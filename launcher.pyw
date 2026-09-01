@@ -11,6 +11,7 @@
 import json
 import os
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -23,11 +24,27 @@ import webbrowser
 from pathlib import Path
 from tkinter import messagebox, scrolledtext
 
-ROOT = Path(__file__).resolve().parent
+# PyInstaller 打包后以 exe 所在目录为根；同时静态引用 bot 模块确保被打进 exe
+FROZEN = getattr(sys, "frozen", False)
+ROOT = Path(sys.executable).resolve().parent if FROZEN else Path(__file__).resolve().parent
+if FROZEN:
+    import bot as _bot_module  # noqa: F401  打包时把机器人主程序一并收进 exe
+
 CONFIG_PATH = ROOT / "config.toml"
+DATA_DIR = ROOT / "data"
 NAPCAT_PORT = 3001
-BOT_PORT = 8080
 WEBUI_PORT = 6099
+PLUGIN_ID = "napcat-plugin-qq-ai-bot"
+CONSOLE_URL = f"http://127.0.0.1:{WEBUI_PORT}/plugin/{PLUGIN_ID}/page/qq-ai-bot"
+
+
+def read_bot_port() -> int:
+    """机器人管理 API 用系统随机端口，实际端口写在 data/api.port。"""
+    try:
+        p = int((DATA_DIR / "api.port").read_text(encoding="ascii").strip())
+        return p if p > 0 else 0
+    except (OSError, ValueError):
+        return 0
 
 
 # ---------------------------------------------------------------- 配置
@@ -66,11 +83,58 @@ def find_qq_exe(configured: str) -> str | None:
 
 
 def port_open(port: int) -> bool:
+    if not port:
+        return False
     try:
         with socket.create_connection(("127.0.0.1", port), timeout=0.3):
             return True
     except OSError:
         return False
+
+
+def bot_alive() -> bool:
+    """机器人进程存活 = 它写出的随机端口还在监听。"""
+    return port_open(read_bot_port())
+
+
+def ensure_plugin(napcat_dir: Path) -> None:
+    """把控制台插件部署进 NapCat：复制文件 + 白名单补丁 + 启用（全部幂等）。"""
+    src_root = Path(getattr(sys, "_MEIPASS", ROOT)) / "napcat-plugin" / PLUGIN_ID
+    dst = napcat_dir / "plugins" / PLUGIN_ID
+    if not src_root.exists():
+        return
+    try:
+        if not dst.exists() or any(
+            (dst / n).read_bytes() != (src_root / n).read_bytes()
+            for n in ("index.mjs", "webui/index.html", "package.json")
+            if (src_root / n).exists()
+        ):
+            shutil.copytree(src_root, dst, dirs_exist_ok=True)
+    except OSError:
+        pass
+    # NapCat v4.18+ 非官方插件白名单：把插件名补进 napcat.mjs（原文件备份一次）
+    mjs = napcat_dir / "napcat.mjs"
+    try:
+        text = mjs.read_text(encoding="utf-8", errors="ignore")
+        anchor, name = '"napcat-plugin-qce"', f'"{PLUGIN_ID}"'
+        if anchor in text and name not in text:
+            backup = napcat_dir / "napcat.mjs.bak"
+            if not backup.exists():
+                shutil.copy2(mjs, backup)
+            mjs.write_text(text.replace(anchor, anchor + ", " + name), encoding="utf-8")
+    except OSError:
+        pass
+    # plugins.json 启用
+    pj = napcat_dir / "config" / "plugins.json"
+    try:
+        data = {}
+        if pj.exists():
+            data = json.loads(pj.read_text(encoding="utf-8"))
+        data[PLUGIN_ID] = True
+        pj.parent.mkdir(parents=True, exist_ok=True)
+        pj.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    except (OSError, json.JSONDecodeError):
+        pass
 
 
 # ---------------------------------------------------------------- 启动器主体
@@ -102,7 +166,7 @@ class Launcher:
                                  bg="#2f6fdb", fg="white", width=14, command=self.one_click)
         self.btn_all.pack(side="left", padx=(0, 10))
 
-        tk.Button(top, text="🌐 控制台", width=10, command=lambda: webbrowser.open("http://127.0.0.1:8080")).pack(side="left", padx=3)
+        tk.Button(top, text="🌐 控制台", width=10, command=lambda: webbrowser.open(CONSOLE_URL)).pack(side="left", padx=3)
         tk.Button(top, text="📋 WebUI", width=9, command=self._open_webui).pack(side="left", padx=3)
         tk.Button(top, text="📌 桌面快捷方式", width=13, command=self._make_shortcut).pack(side="right", padx=3)
 
@@ -165,6 +229,7 @@ class Launcher:
         if port_open(NAPCAT_PORT):
             self.log_line(f"端口 {NAPCAT_PORT} 已有 NapCat 在监听（非启动器启动），跳过启动")
             return True
+        ensure_plugin(napcat_dir)
         napcat_dir = Path(self.cfg["napcat_dir"])
         boot = napcat_dir / "NapCatWinBootMain.exe"
         qq = find_qq_exe(self.cfg.get("qq_path", ""))
@@ -209,13 +274,18 @@ class Launcher:
         if self.proc_bot and self.proc_bot.poll() is None:
             self.log_line("机器人已由启动器运行中，跳过")
             return True
-        if port_open(BOT_PORT):
-            self.log_line(f"端口 {BOT_PORT} 已有机器人在监听（非启动器启动），跳过启动")
+        if bot_alive():
+            self.log_line("机器人已在运行（非启动器启动），跳过启动")
             return True
         if not port_open(NAPCAT_PORT):
             self.log_line("提示：NapCat 未运行，机器人将自动重连等待其就绪")
-        self.log_line("启动机器人 bot.py …")
-        self.proc_bot = self._spawn([sys.executable, "bot.py"], str(ROOT), os.environ.copy(), "机器人")
+        self.log_line("启动机器人 …")
+        if FROZEN:
+            # 单文件 exe：再次拉起自身，以 --run-bot 参数进入机器人模式
+            args = [sys.executable, "--run-bot"]
+        else:
+            args = [sys.executable, str(ROOT / "launcher.pyw"), "--run-bot"]
+        self.proc_bot = self._spawn(args, str(ROOT), os.environ.copy(), "机器人")
         return True
 
     def stop_bot(self) -> None:
@@ -244,14 +314,14 @@ class Launcher:
                 if not self.start_bot():
                     return
                 for _ in range(15):
-                    if port_open(BOT_PORT):
+                    if bot_alive():
                         break
                     time.sleep(1)
-                if port_open(BOT_PORT):
-                    self.log_line("✓ 机器人就绪，正在打开管理控制台…")
-                    webbrowser.open("http://127.0.0.1:8080")
+                if bot_alive():
+                    self.log_line("✓ 机器人就绪，正在打开管理控制台（6099）…")
+                    webbrowser.open(CONSOLE_URL)
                 else:
-                    self.log_line("机器人启动中，稍后可手动打开控制台")
+                    self.log_line("机器人启动中，稍后可在 NapCat WebUI 侧边栏打开「QQ AI 机器人」")
             finally:
                 self.root.after(0, lambda: self.btn_all.config(state="normal"))
 
@@ -262,11 +332,12 @@ class Launcher:
     def _status_loop(self) -> None:
         while True:
             nap = port_open(NAPCAT_PORT)
-            bot = port_open(BOT_PORT)
+            bot_port = read_bot_port()
+            bot = port_open(bot_port)
             conn = False
             if bot:
                 try:
-                    with urllib.request.urlopen("http://127.0.0.1:8080/api/status", timeout=1.5) as r:
+                    with urllib.request.urlopen(f"http://127.0.0.1:{bot_port}/api/status", timeout=1.5) as r:
                         conn = bool(json.loads(r.read().decode()).get("connected"))
                 except (OSError, ValueError, json.JSONDecodeError):
                     conn = False
@@ -298,13 +369,17 @@ class Launcher:
             messagebox.showinfo("提示", "NapCat WebUI 未在运行（6099 端口未开）")
 
     def _make_shortcut(self) -> None:
-        pythonw = Path(sys.executable).with_name("pythonw.exe")
-        exe = str(pythonw) if pythonw.exists() else sys.executable
+        if FROZEN:
+            exe, args = sys.executable, ""
+        else:
+            pythonw = Path(sys.executable).with_name("pythonw.exe")
+            exe = str(pythonw) if pythonw.exists() else sys.executable
+            args = str(ROOT / "launcher.pyw")
         desktop = Path.home() / "Desktop" / "QQ AI 机器人.lnk"
         ps = (
             "$s=(New-Object -ComObject WScript.Shell).CreateShortcut('%s');"
             "$s.TargetPath='%s';$s.Arguments='%s';$s.WorkingDirectory='%s';"
-            "$s.Description='QQ AI 机器人一键启动';$s.Save()" % (desktop, exe, ROOT / "launcher.pyw", ROOT)
+            "$s.Description='QQ AI 机器人一键启动';$s.Save()" % (desktop, exe, args, ROOT)
         )
         r = subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, timeout=20)
         if r.returncode == 0:
@@ -328,6 +403,16 @@ class Launcher:
 
 
 def main() -> None:
+    if "--run-bot" in sys.argv:
+        # 单文件 exe 的机器人模式：以自身进程运行机器人主程序
+        import asyncio
+
+        import bot as bot_module
+
+        bot_module.setup_logging()
+        cfg = bot_module.apply_runtime_overrides(bot_module.load_config(CONFIG_PATH))
+        asyncio.run(bot_module.async_main(cfg))
+        return
     app = Launcher()
     app.root.mainloop()
 

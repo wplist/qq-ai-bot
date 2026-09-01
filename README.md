@@ -101,43 +101,55 @@ python bot.py
 
 ## 六点五、桌面一键启动器（推荐日常使用）
 
-双击项目目录下的 **`launcher.pyw`** 即可打开启动器窗口（无黑框）：
+两种等价入口：
 
-- **🚀 一键启动**：自动启动 NapCat（快速登录）→ 等就绪 → 启动机器人 → 打开管理控制台
+- **单文件程序**：双击项目目录下的 **`qq-ai-bot.exe`**（约 23MB，无需安装 Python；构建方法见第八节）
+- **源码方式**：双击 **`launcher.pyw`**（无黑框）
+
+功能（两者一致）：
+
+- **🚀 一键启动**：自动部署插件 → NapCat 快速登录 → 等就绪 → 启动机器人 → 打开 6099 管理控制台
 - 状态灯实时显示 NapCat / 机器人是否在线（🟢已连接 / 🟡运行中未连上 / ⚪未运行）
 - 可单独启动/停止 NapCat 或机器人（停止只结束启动器自己拉起的进程，不影响桌面上的其它 QQ）
 - 日志区实时滚动两个进程的输出；「📌 桌面快捷方式」一键创建桌面图标
 
 启动器读取 `config.toml` 的 `[launcher]` 段：`napcat_dir`（NapCat Shell 目录）、`qq_path`（QQ.exe 路径，留空自动探测）、`qq_account`（机器人QQ号，快速登录用；0 = 扫码）。
 
-## 七、管理控制台（WebUI）
+## 七、管理控制台（WebUI，唯一入口）
 
-机器人运行时自带一个**配置控制台**，两种入口：
-
-1. **NapCat WebUI 内嵌**（推荐）：打开 NapCat WebUI（`http://127.0.0.1:6099`），侧边栏会出现「🤖 QQ AI 机器人」页面
-2. **独立地址**：直接打开 [http://127.0.0.1:8080](http://127.0.0.1:8080)（功能完全相同）
-
-控制台功能（所有修改**即时生效并持久化**，无需重启）：
+机器人运行时，打开 NapCat WebUI（`http://127.0.0.1:6099`），侧边栏「🤖 QQ AI 机器人」即为配置控制台：
 
 - 运行状态：机器人小号在线状态、运行时长、会话/记忆数、群聊/私聊开关
 - NapCat 接口：输入 WS 地址 + token，可「测试连接」（显示当前登录小号）或「保存并重连」
 - 智谱 API Key：输入新 Key 可先「测试」再「保存」，保存后立即按新 Key 调用
 - 管理员账号绑定：输入 QQ 号添加/删除，即时影响聊天命令权限
 
-控制台保存的配置写入 `data/runtime.json`，优先级高于 `config.toml`。
+所有修改**即时生效并持久化**（写入 `data/runtime.json`，优先级高于 `config.toml`）。
 
-### NapCat 插件安装说明（内嵌入口用）
+> 技术说明：控制台页面与数据接口全部走 6099 同源代理（插件转发给机器人的内部随机端口），**不占用任何额外固定端口**。机器人未运行时页面会显示「机器人程序未运行」。
 
-`napcat-plugin/napcat-plugin-qq-ai-bot/` 是 NapCat 插件，需手动安装：
+### NapCat 插件说明
 
-1. 复制该文件夹到 NapCat 的 `plugins` 目录（Shell 版为 `<NapCat目录>/plugins/`）
-2. NapCat v4.18 起**非官方插件默认被白名单拦截**，需把插件名加入 `napcat.mjs` 中的 `_me` 官方白名单 Set（搜 `napcat-plugin-qce`，在其后加一行 `"napcat-plugin-qq-ai-bot"`）
-3. 在 NapCat 的 `config/plugins.json` 中写入 `{"napcat-plugin-qq-ai-bot": true}` 启用
-4. 重启 NapCat，日志出现「插件已加载，控制台页面已注册」即成功
+`napcat-plugin/napcat-plugin-qq-ai-bot/` 是 NapCat 插件（WebUI 侧边栏页面 + 同源 API 转发）。**用启动器或 exe 启动时会自动部署**（复制插件 → 白名单补丁 → 启用，全部幂等），无需手工操作。手工部署步骤：
 
-> 注意：NapCat 升级后 `napcat.mjs` 会被还原，需重新执行第 2 步；期间可继续用独立地址 8080。
+1. 复制插件文件夹到 NapCat 的 `plugins` 目录（Shell 版为 `<NapCat目录>/plugins/`）
+2. NapCat v4.18+ 非官方插件需加入 `napcat.mjs` 中的官方白名单 Set（搜 `napcat-plugin-qce`，其后追加 `"napcat-plugin-qq-ai-bot"`）
+3. 在 NapCat 的 `config/plugins.json` 写入 `{"napcat-plugin-qq-ai-bot": true}` 并重启 NapCat
 
-## 八、常见问题
+> NapCat 升级会还原 `napcat.mjs`，启动器下次启动会自动重新打补丁。
+
+## 八、打包成单文件 exe
+
+```bash
+pip install pyinstaller
+pyinstaller --onefile --noconsole --name qq-ai-bot ^
+  --add-data "napcat-plugin;napcat-plugin" ^
+  --exclude-module pandas --exclude-module numpy launcher.pyw
+```
+
+产物 `dist/qq-ai-bot.exe`（约 23MB）与 `config.toml` 放同一目录即可双击使用，**目标机器无需安装 Python**。exe 双击 = 启动器窗口；内部以 `--run-bot` 参数自拉起机器人进程。`--exclude-module` 用于剔除 openai SDK 可选依赖拉进来的 pandas/numpy（否则体积会膨胀到 400MB+）。
+
+## 九、常见问题
 
 - **连接不上 NapCat**：确认 NapCat 已启动、端口一致；若仍失败，把 `ws_url` 改成 `ws://127.0.0.1:3001/onebot/v11/ws` 再试（不同版本路径要求不同）。
 - **连接被拒（401/403）**：`access_token` 与 NapCat 网络配置里的 token 不一致。
@@ -146,21 +158,23 @@ python bot.py
 - **日志在哪**：控制台 + `data/bot.log`；对话历史在 `data/sessions.json`。
 - **想重置所有记忆**：停机后删除 `data/sessions.json`。
 
-## 九、目录结构
+## 十、目录结构
 
 ```
 qq聊天工具/
+├── qq-ai-bot.exe        # 单文件程序（本地构建，不入库）
 ├── launcher.pyw         # 桌面一键启动器（双击运行）
-├── bot.py               # 主程序：WS 客户端、事件分发、命令处理、管理API
+├── bot.py               # 主程序：WS 客户端、事件分发、命令处理、内部API
 ├── glm_client.py        # GLM-5.3 调用封装
 ├── conversation.py      # 会话记忆管理（持久化）
-├── napcat-plugin/       # NapCat 插件（WebUI 内嵌控制台页面）
+├── napcat-plugin/       # NapCat 插件（控制台页面 + 同源API转发）
 │   └── napcat-plugin-qq-ai-bot/
-│       ├── index.mjs    # 插件入口：注册侧边栏页面
+│       ├── index.mjs    # 插件入口
 │       └── webui/index.html  # 控制台页面
 ├── config.example.toml  # 配置模板（复制为 config.toml 使用）
 ├── config.toml          # 实际配置（含密钥，勿外传，不入库）
 ├── requirements.txt     # Python 依赖
-├── data/                # 运行时生成：日志、会话历史、控制台持久化（不入库）
+├── 项目说明.md           # 项目说明（架构/端口/技术栈/需求达成）
+├── data/                # 运行时生成：日志、会话历史、人格、端口文件（不入库）
 └── backups/             # 修改文件时的自动备份（不入库）
 ```
