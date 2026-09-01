@@ -20,7 +20,6 @@ import time
 import tomllib
 import tkinter as tk
 import urllib.request
-import webbrowser
 from pathlib import Path
 from tkinter import messagebox, scrolledtext
 
@@ -45,6 +44,19 @@ def read_bot_port() -> int:
         return p if p > 0 else 0
     except (OSError, ValueError):
         return 0
+
+
+_last_open: dict[str, float] = {}
+
+
+def open_url(url: str) -> None:
+    """打开浏览器页面。os.startfile 单次打开 + 1 秒防抖，
+    避免浏览器冷启动时把启动参数处理两次导致双开标签。"""
+    now = time.time()
+    if now - _last_open.get(url, 0.0) < 1.0:
+        return
+    _last_open[url] = now
+    os.startfile(url)
 
 
 # ---------------------------------------------------------------- 配置
@@ -166,7 +178,7 @@ class Launcher:
                                  bg="#2f6fdb", fg="white", width=14, command=self.one_click)
         self.btn_all.pack(side="left", padx=(0, 10))
 
-        tk.Button(top, text="🌐 控制台", width=10, command=lambda: webbrowser.open(CONSOLE_URL)).pack(side="left", padx=3)
+        tk.Button(top, text="🌐 控制台", width=10, command=lambda: open_url(CONSOLE_URL)).pack(side="left", padx=3)
         tk.Button(top, text="📋 WebUI", width=9, command=self._open_webui).pack(side="left", padx=3)
         tk.Button(top, text="📌 桌面快捷方式", width=13, command=self._make_shortcut).pack(side="right", padx=3)
 
@@ -319,7 +331,7 @@ class Launcher:
                     time.sleep(1)
                 if bot_alive():
                     self.log_line("✓ 机器人就绪，正在打开管理控制台（6099）…")
-                    webbrowser.open(CONSOLE_URL)
+                    open_url(CONSOLE_URL)
                 else:
                     self.log_line("机器人启动中，稍后可在 NapCat WebUI 侧边栏打开「QQ AI 机器人」")
             finally:
@@ -364,7 +376,7 @@ class Launcher:
 
     def _open_webui(self) -> None:
         if port_open(WEBUI_PORT):
-            webbrowser.open("http://127.0.0.1:6099/webui")
+            open_url("http://127.0.0.1:6099/webui")
         else:
             messagebox.showinfo("提示", "NapCat WebUI 未在运行（6099 端口未开）")
 
