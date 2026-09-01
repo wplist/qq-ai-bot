@@ -158,7 +158,28 @@ pyinstaller --onefile --noconsole --name qq-ai-bot ^
 - **日志在哪**：控制台 + `data/bot.log`；对话历史在 `data/sessions.json`。
 - **想重置所有记忆**：停机后删除 `data/sessions.json`。
 
-## 十、目录结构
+## 十一、给其他使用者（克隆/分发指南）
+
+本仓库**不含任何密钥**，这是有意设计：密钥是个人凭证，每人用自己的。
+
+| 凭据 | 别人怎么获得 |
+|---|---|
+| 智谱 API Key | 注册自己的 [open.bigmodel.cn](https://open.bigmodel.cn) 账号 → API 密钥页创建（新号有免费额度） |
+| NapCat 接口 token | **不用找，自己设定**：在 NapCat WebUI → 网络配置 → 新建正向 WebSocket 时自己填一串（留空 = 不鉴权，仅本机使用可接受），然后把同样的值填进 `config.toml` 的 `access_token` |
+| WebUI 登录密钥（6099 页面） | NapCat **首次启动时控制台日志会打印**（`WebUi User Panel Url: ...token=xxx`），也保存在 NapCat 的 `config/webui.json` |
+| 机器人 QQ 号 | 用自己的 QQ 小号扫码/快速登录 |
+
+**五步上手**：
+
+1. 装官方 QQ 和 NapCatQQ Shell，启动并扫码登录自己的小号（见第二节）
+2. NapCat WebUI 网络配置里新建 OneBot v11 正向 WebSocket（默认端口 3001，token 自己定）
+3. `copy config.example.toml config.toml`，填入：自己的 API Key、`ws_url`、`access_token`（与第 2 步一致）、`[launcher]` 段的路径与机器人 QQ 号
+4. 双击 `qq-ai-bot.exe`（需自行构建，见第八节）或 `python bot.py`
+5. 打开 `http://127.0.0.1:6099` 侧边栏「🤖 QQ AI 机器人」完成其余配置（管理员绑定等）
+
+> 把仓库发给朋友 = 发仓库地址即可；发 exe = exe + 让对方按上面 1-3 准备自己的凭据。**切勿把自己的密钥文件（config.toml / 密钥信息.txt）一起发出去**。
+
+## 十二、目录结构
 
 ```
 qq聊天工具/
@@ -173,6 +194,7 @@ qq聊天工具/
 │       └── webui/index.html  # 控制台页面
 ├── config.example.toml  # 配置模板（复制为 config.toml 使用）
 ├── config.toml          # 实际配置（含密钥，勿外传，不入库）
+├── 密钥信息.txt          # 本机密钥速查（私密，不入库）
 ├── requirements.txt     # Python 依赖
 ├── 项目说明.md           # 项目说明（架构/端口/技术栈/需求达成）
 ├── data/                # 运行时生成：日志、会话历史、人格、端口文件（不入库）

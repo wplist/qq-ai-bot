@@ -1,6 +1,7 @@
 # 含密钥与个人配置，绝不入库
 config.toml
 data/
+密钥信息.txt
 
 # 自动备份与缓存
 backups/
