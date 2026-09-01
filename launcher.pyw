@@ -37,13 +37,52 @@ PLUGIN_ID = "napcat-plugin-qq-ai-bot"
 CONSOLE_URL = f"http://127.0.0.1:{WEBUI_PORT}/plugin/{PLUGIN_ID}/page/qq-ai-bot"
 
 
-def read_bot_port() -> int:
-    """机器人管理 API 用系统随机端口，实际端口写在 data/api.port。"""
+def _plugin_port_file() -> Path:
+    """插件目录下的 api.port（NapCat WebUI 转发用的那份）。"""
     try:
-        p = int((DATA_DIR / "api.port").read_text(encoding="ascii").strip())
-        return p if p > 0 else 0
+        with open(CONFIG_PATH, "rb") as f:
+            cfg = tomllib.load(f)
+        napcat_dir = cfg.get("launcher", {}).get("napcat_dir", r"E:\NapCat\shell")
+    except (OSError, tomllib.TOMLDecodeError, KeyError):
+        napcat_dir = r"E:\NapCat\shell"
+    return Path(napcat_dir) / "plugins" / PLUGIN_ID / "api.port"
+
+
+def _api_alive_on(port: int) -> bool:
+    if port <= 0:
+        return False
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status", timeout=1.5) as r:
+            return r.status == 200
     except (OSError, ValueError):
-        return 0
+        return False
+
+
+def read_bot_port() -> int:
+    """返回正在服务的机器人 API 端口（无则 0）。
+
+    同时探测 data/api.port 与插件目录 api.port 两份文件，以真正响应
+    /api/status 的为准，并把正确端口回写 data/api.port —— 自愈文件失步
+    （历史上出现过旧值残留导致状态灯误判、实例堆积的问题）。
+    """
+    candidates = []
+    for f in (DATA_DIR / "api.port", _plugin_port_file()):
+        try:
+            v = int(f.read_text(encoding="ascii").strip())
+            if v > 0 and v not in candidates:
+                candidates.append(v)
+        except (OSError, ValueError):
+            continue
+    for port in candidates:
+        if _api_alive_on(port):
+            try:
+                data_file = DATA_DIR / "api.port"
+                if data_file.read_text(encoding="ascii").strip() != str(port):
+                    data_file.write_text(str(port), encoding="ascii")
+            except OSError:
+                pass
+            return port
+    return 0
 
 
 _last_open: dict[str, float] = {}
@@ -105,8 +144,8 @@ def port_open(port: int) -> bool:
 
 
 def bot_alive() -> bool:
-    """机器人进程存活 = 它写出的随机端口还在监听。"""
-    return port_open(read_bot_port())
+    """机器人进程存活 = 它的内部 API 正在应答（而非仅端口文件存在）。"""
+    return read_bot_port() > 0
 
 
 def ensure_plugin(napcat_dir: Path) -> None:
@@ -345,7 +384,7 @@ class Launcher:
         while True:
             nap = port_open(NAPCAT_PORT)
             bot_port = read_bot_port()
-            bot = port_open(bot_port)
+            bot = bot_port > 0
             conn = False
             if bot:
                 try:
@@ -421,6 +460,9 @@ def main() -> None:
 
         import bot as bot_module
 
+        print(f"[路径诊断] sys.executable={sys.executable}")
+        print(f"[路径诊断] resolve={Path(sys.executable).resolve()}")
+        print(f"[路径诊断] frozen={getattr(sys, 'frozen', None)} bot.ROOT={bot_module.ROOT} DATA_DIR={bot_module.DATA_DIR}", flush=True)
         bot_module.setup_logging()
         cfg = bot_module.apply_runtime_overrides(bot_module.load_config(CONFIG_PATH))
         asyncio.run(bot_module.async_main(cfg))

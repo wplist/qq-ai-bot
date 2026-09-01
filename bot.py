@@ -17,6 +17,7 @@ import re
 import sys
 import threading
 import time
+import urllib.request
 import uuid
 from pathlib import Path
 
@@ -25,7 +26,12 @@ import websockets
 from conversation import ConversationStore
 from glm_client import GLMClient, GLMError
 
-ROOT = Path(__file__).resolve().parent
+# PyInstaller 打包后以 exe 所在目录为项目根（保证 data/ 与 config.toml 跟着 exe 走）
+ROOT = (
+    Path(sys.executable).resolve().parent
+    if getattr(sys, "frozen", False)
+    else Path(__file__).resolve().parent
+)
 DATA_DIR = ROOT / "data"
 
 # 群聊里 @ 机器人但没说别的内容时的固定回复
@@ -705,8 +711,9 @@ class AdminAPI:
             try:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(str(self.port), encoding="ascii")
-            except OSError:
-                pass
+            except OSError as e:
+                # 失步会导致启动器误判，绝不能静默吞掉
+                logging.warning("api.port 写入失败（%s）: %s", target, e)
 
 
 # ---------------------------------------------------------------- 入口
@@ -728,7 +735,43 @@ async def check_glm(cfg: dict) -> None:
     print(f"✓ 自检成功，模型回复：{reply}")
 
 
+def _api_alive_on(port: int) -> bool:
+    """探测指定端口是否已有机器人实例在服务。"""
+    if port <= 0:
+        return False
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/status", timeout=1.5) as r:
+            return r.status == 200
+    except (OSError, ValueError):
+        return False
+
+
+def _existing_instance_port(cfg: dict) -> int:
+    """读取两个 api.port 文件并探测，返回已在服务的端口（无则 0）。"""
+    candidates = []
+    plugin_file = (
+        Path(cfg["launcher"]["napcat_dir"]) / "plugins" / "napcat-plugin-qq-ai-bot" / "api.port"
+    )
+    for f in (DATA_DIR / "api.port", plugin_file):
+        try:
+            v = int(f.read_text(encoding="ascii").strip())
+            if v > 0 and v not in candidates:
+                candidates.append(v)
+        except (OSError, ValueError):
+            continue
+    for port in candidates:
+        if _api_alive_on(port):
+            return port
+    return 0
+
+
 async def async_main(cfg: dict) -> None:
+    # 单实例保护：已有实例在服务时直接退出，避免多实例重复回复消息
+    existing = _existing_instance_port(cfg)
+    if existing:
+        logging.info("已有机器人实例在运行（端口 %d），本进程退出", existing)
+        print(f"已有机器人实例在运行（端口 {existing}），本进程退出")
+        return
     glm = GLMClient(
         api_key=cfg["glm"]["api_key"],
         base_url=cfg["glm"]["base_url"],
