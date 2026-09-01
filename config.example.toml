@@ -51,3 +51,12 @@ max_history_turns = 20
 reply_prefix = ""
 # 超长回复按多少字符分段发送
 segment_length = 3000
+
+# ---------- 桌面启动器（launcher.pyw 用）----------
+[launcher]
+# NapCat Shell 目录（含 NapCatWinBootMain.exe）
+napcat_dir = "E:\\NapCat\\shell"
+# QQ 安装路径的 QQ.exe；留空 "" = 自动从注册表/常见路径探测
+qq_path = ""
+# 机器人QQ号（用于快速登录免扫码）；0 = 每次扫码登录
+qq_account = 0

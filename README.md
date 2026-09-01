@@ -99,6 +99,17 @@ python bot.py
 
 **改人格**：编辑 `config.toml` 的 `[persona]`（name 和 system_prompt），重启生效；或在聊天里用 `/性格` 命令即时修改。
 
+## 六点五、桌面一键启动器（推荐日常使用）
+
+双击项目目录下的 **`launcher.pyw`** 即可打开启动器窗口（无黑框）：
+
+- **🚀 一键启动**：自动启动 NapCat（快速登录）→ 等就绪 → 启动机器人 → 打开管理控制台
+- 状态灯实时显示 NapCat / 机器人是否在线（🟢已连接 / 🟡运行中未连上 / ⚪未运行）
+- 可单独启动/停止 NapCat 或机器人（停止只结束启动器自己拉起的进程，不影响桌面上的其它 QQ）
+- 日志区实时滚动两个进程的输出；「📌 桌面快捷方式」一键创建桌面图标
+
+启动器读取 `config.toml` 的 `[launcher]` 段：`napcat_dir`（NapCat Shell 目录）、`qq_path`（QQ.exe 路径，留空自动探测）、`qq_account`（机器人QQ号，快速登录用；0 = 扫码）。
+
 ## 七、管理控制台（WebUI）
 
 机器人运行时自带一个**配置控制台**，两种入口：
@@ -139,6 +150,7 @@ python bot.py
 
 ```
 qq聊天工具/
+├── launcher.pyw         # 桌面一键启动器（双击运行）
 ├── bot.py               # 主程序：WS 客户端、事件分发、命令处理、管理API
 ├── glm_client.py        # GLM-5.3 调用封装
 ├── conversation.py      # 会话记忆管理（持久化）
