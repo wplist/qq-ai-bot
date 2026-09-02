@@ -20,6 +20,7 @@ import time
 import tomllib
 import tkinter as tk
 import urllib.request
+from collections import deque
 from pathlib import Path
 from tkinter import messagebox, scrolledtext
 
@@ -196,6 +197,7 @@ class Launcher:
         self.proc_napcat: subprocess.Popen | None = None
         self.proc_bot: subprocess.Popen | None = None
         self.status = {"napcat": False, "bot": False, "bot_connected": False}
+        self._proc_tail: dict[str, deque] = {}  # 各进程最近输出，失败时展示用
 
         self.root = tk.Tk()
         self.root.title("QQ AI 机器人 · 启动器")
@@ -244,8 +246,22 @@ class Launcher:
         self.root.after(0, self._append_log, msg)
 
     def _append_log(self, msg: str) -> None:
+        if sys.stdout:  # 命令行运行（如 --auto 自检）时同步到控制台
+            try:
+                print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
+            except OSError:
+                pass
         self.log.insert("end", f"[{time.strftime('%H:%M:%S')}] {msg}\n")
         self.log.see("end")
+
+    def _alert(self, title: str, msg: str) -> None:
+        """线程安全弹窗：worker 线程禁止直接调 messagebox。"""
+        def show():
+            try:
+                messagebox.showerror(title, msg)
+            except Exception:
+                self._append_log(f"⚠ {title}：{msg}")
+        self.root.after(0, show)
 
     def _drain_log(self) -> None:
         # 由各读输出线程直接调 log_line（经 after 回主线程），此处仅保活
@@ -254,10 +270,12 @@ class Launcher:
     # ---------- 进程管理 ----------
 
     def _pipe_reader(self, proc: subprocess.Popen, tag: str) -> None:
+        tail = self._proc_tail.setdefault(tag, deque(maxlen=50))
         try:
             for line in proc.stdout:
                 line = line.rstrip()
                 if line:
+                    tail.append(line)
                     self.log_line(f"{tag}｜{line}")
         except (OSError, ValueError):
             pass
@@ -280,15 +298,15 @@ class Launcher:
         if port_open(NAPCAT_PORT):
             self.log_line(f"端口 {NAPCAT_PORT} 已有 NapCat 在监听（非启动器启动），跳过启动")
             return True
-        ensure_plugin(napcat_dir)
         napcat_dir = Path(self.cfg["napcat_dir"])
+        ensure_plugin(napcat_dir)
         boot = napcat_dir / "NapCatWinBootMain.exe"
         qq = find_qq_exe(self.cfg.get("qq_path", ""))
         if not boot.exists():
-            messagebox.showerror("启动失败", f"未找到 {boot}\n请在 config.toml [launcher] 里修正 napcat_dir")
+            self._alert("启动失败", f"未找到 {boot}\n请在 config.toml [launcher] 里修正 napcat_dir")
             return False
         if not qq:
-            messagebox.showerror("启动失败", "未找到 QQ.exe，请在 config.toml [launcher] 里填写 qq_path")
+            self._alert("启动失败", "未找到 QQ.exe，请在 config.toml [launcher] 里填写 qq_path")
             return False
 
         main_mjs = str(napcat_dir / "napcat.mjs").replace("\\", "/")
@@ -346,22 +364,43 @@ class Launcher:
         self.proc_bot.terminate()
         self.log_line("已停止机器人")
 
+    def _wait_napcat(self, timeout: int) -> bool:
+        """等待 NapCat 端口就绪；其进程中途退出则立即失败。"""
+        for n in range(timeout):
+            if port_open(NAPCAT_PORT):
+                return True
+            proc = self.proc_napcat
+            if proc is not None and proc.poll() is not None:
+                return False  # 进程已死，不再盲等
+            if n % 10 == 9:
+                self.log_line(f"等待 NapCat 就绪… {n + 1} 秒")
+            time.sleep(1)
+        return port_open(NAPCAT_PORT)
+
     def one_click(self) -> None:
         self.btn_all.config(state="disabled")
 
         def worker():
             try:
-                if not self.start_napcat():
-                    return
-                self.log_line("等待 NapCat 就绪（最多 120 秒）…")
-                for _ in range(120):
-                    if port_open(NAPCAT_PORT):
-                        break
-                    time.sleep(1)
+                napcat_ok = False
                 if port_open(NAPCAT_PORT):
-                    self.log_line("✓ NapCat 就绪")
-                else:
-                    self.log_line("⚠ NapCat 未在限时内就绪，仍继续启动机器人（它会自动重连）")
+                    self.log_line("✓ NapCat 已在运行")
+                    napcat_ok = True
+                for attempt in range(1, 4):  # 开机初期偶发失败自动重试
+                    if napcat_ok:
+                        break
+                    if not self.start_napcat():
+                        return  # 错误详情已弹窗/写日志
+                    if self._wait_napcat(90):
+                        napcat_ok = True
+                        self.log_line(f"✓ NapCat 就绪（第 {attempt} 次尝试）")
+                        break
+                    died = self.proc_napcat is not None and self.proc_napcat.poll() is not None
+                    self.log_line(f"⚠ NapCat 第 {attempt} 次尝试未就绪（{'进程已退出' if died else '等待超时'}），输出尾端：")
+                    for line in list(self._proc_tail.get("NapCat", ()))[-8:]:
+                        self.log_line(f"  {line}")
+                if not napcat_ok:
+                    self.log_line("⚠ NapCat 三次尝试均未就绪，仍继续启动机器人（机器人会持续自动重连）")
                 if not self.start_bot():
                     return
                 for _ in range(15):
@@ -373,6 +412,10 @@ class Launcher:
                     open_url(CONSOLE_URL)
                 else:
                     self.log_line("机器人启动中，稍后可在 NapCat WebUI 侧边栏打开「QQ AI 机器人」")
+            except Exception:
+                import traceback
+
+                self.log_line("一键启动出现异常：" + traceback.format_exc(limit=2))
             finally:
                 self.root.after(0, lambda: self.btn_all.config(state="normal"))
 
@@ -468,6 +511,8 @@ def main() -> None:
         asyncio.run(bot_module.async_main(cfg))
         return
     app = Launcher()
+    if "--auto" in sys.argv:  # 自动化自检：启动后自动执行一键启动
+        app.root.after(1500, app.one_click)
     app.root.mainloop()
 
 
