@@ -63,7 +63,9 @@ segment_length = 3000
 # ---------- 桌面启动器（launcher.pyw 用）----------
 [launcher]
 # NapCat Shell 目录（含 NapCatWinBootMain.exe）
-napcat_dir = "E:\\NapCat\\shell"
+# 留空 = 默认使用项目文件夹内的 NapCat\shell（推荐：整个项目一夹端走、随迁随用）
+# 仅当 NapCat 安装在别处时才需要填写实际路径，例如 "D:\\Tools\\NapCat\\shell"
+napcat_dir = ""
 # QQ 安装路径的 QQ.exe；留空 "" = 自动从注册表/常见路径探测
 qq_path = ""
 # 机器人QQ号（用于快速登录免扫码）；0 = 每次扫码登录

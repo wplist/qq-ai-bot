@@ -3,6 +3,9 @@ config.toml
 data/
 密钥信息.txt
 
+# NapCat 本体（迁入项目内，含登录缓存等大文件，绝不入库）
+NapCat/
+
 # 自动备份与缓存
 backups/
 __pycache__/

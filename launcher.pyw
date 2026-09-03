@@ -43,9 +43,9 @@ def _plugin_port_file() -> Path:
     try:
         with open(CONFIG_PATH, "rb") as f:
             cfg = tomllib.load(f)
-        napcat_dir = cfg.get("launcher", {}).get("napcat_dir", r"E:\NapCat\shell")
+        napcat_dir = cfg.get("launcher", {}).get("napcat_dir", str(ROOT / "NapCat" / "shell"))
     except (OSError, tomllib.TOMLDecodeError, KeyError):
-        napcat_dir = r"E:\NapCat\shell"
+        napcat_dir = str(ROOT / "NapCat" / "shell")
     return Path(napcat_dir) / "plugins" / PLUGIN_ID / "api.port"
 
 
@@ -102,13 +102,15 @@ def open_url(url: str) -> None:
 # ---------------------------------------------------------------- 配置
 
 def load_config() -> dict:
-    defaults = {"napcat_dir": r"E:\NapCat\shell", "qq_path": "", "qq_account": 0}
+    defaults = {"napcat_dir": str(ROOT / "NapCat" / "shell"), "qq_path": "", "qq_account": 0}
     try:
         with open(CONFIG_PATH, "rb") as f:
             cfg = tomllib.load(f).get("launcher", {})
     except (OSError, tomllib.TOMLDecodeError):
         cfg = {}
     defaults.update({k: cfg[k] for k in defaults if k in cfg})
+    if not str(defaults["napcat_dir"]).strip():  # 留空 = 用默认（项目内 NapCat\shell）
+        defaults["napcat_dir"] = str(ROOT / "NapCat" / "shell")
     return defaults
 
 

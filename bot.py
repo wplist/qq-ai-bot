@@ -120,7 +120,10 @@ def load_config(path: Path) -> dict:
     persona.setdefault(
         "system_prompt", "你是{name}，一个友善的AI聊天助手，用轻松口语化的风格简洁回答问题。"
     )
-    cfg["launcher"].setdefault("napcat_dir", r"E:\NapCat\shell")
+    launcher_default = str(ROOT / "NapCat" / "shell")
+    cfg["launcher"].setdefault("napcat_dir", launcher_default)
+    if not str(cfg["launcher"]["napcat_dir"]).strip():
+        cfg["launcher"]["napcat_dir"] = launcher_default
     behavior.setdefault("group_enabled", True)
     behavior.setdefault("private_enabled", True)
     behavior.setdefault("private_whitelist", [])

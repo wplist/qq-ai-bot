@@ -36,7 +36,7 @@ QQ 服务器 ⇄ NapCatQQ（扫码登录你的QQ号）
 
 **方式 B：Shell 版（电脑上已装官方 QQ）**
 1. 确保官方 QQ 为最新版
-2. 从 GitHub Releases 下载 `NapCat.Shell.zip` 解压
+2. 从 GitHub Releases 下载 `NapCat.Shell.zip` 解压（**推荐解压到项目文件夹内 `NapCat\shell`**，这是启动器的默认查找位置，整个项目可一夹端走）
 3. 双击 `launcher.bat` 启动（Win10 用 `launcher-win10.bat`）
 
 **扫码登录**：启动后控制台会显示二维码，用当机器人的那个 QQ 号扫码登录。
@@ -113,7 +113,7 @@ python bot.py
 - 可单独启动/停止 NapCat 或机器人（停止只结束启动器自己拉起的进程，不影响桌面上的其它 QQ）
 - 日志区实时滚动两个进程的输出；「📌 桌面快捷方式」一键创建桌面图标
 
-启动器读取 `config.toml` 的 `[launcher]` 段：`napcat_dir`（NapCat Shell 目录）、`qq_path`（QQ.exe 路径，留空自动探测）、`qq_account`（机器人QQ号，快速登录用；0 = 扫码）。
+启动器读取 `config.toml` 的 `[launcher]` 段：`napcat_dir`（NapCat Shell 目录，**留空 = 默认使用项目文件夹内的 `NapCat\shell`**，推荐）、`qq_path`（QQ.exe 路径，留空自动探测）、`qq_account`（机器人QQ号，快速登录用；0 = 扫码）。
 
 ## 七、管理控制台（WebUI，唯一入口）
 
