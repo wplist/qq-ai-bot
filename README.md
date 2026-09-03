@@ -122,6 +122,7 @@ python bot.py
 - 运行状态：机器人小号在线状态、运行时长、会话/记忆数、群聊/私聊开关
 - NapCat 接口：输入 WS 地址 + token，可「测试连接」（显示当前登录小号）或「保存并重连」
 - 智谱 API Key：输入新 Key 可先「测试」再「保存」，保存后立即按新 Key 调用
+- **AI 模型（任意 OpenAI 兼容）**：访问 URL + 模型名 + API Key 三项配置，可切换 DeepSeek / Kimi / 通义 / OpenAI / Ollama 等任意 OpenAI 兼容服务（Key 留空沿用已保存的），测试与保存即时生效
 - 管理员账号绑定：输入 QQ 号添加/删除，即时影响聊天命令权限
 
 所有修改**即时生效并持久化**（写入 `data/runtime.json`，优先级高于 `config.toml`）。

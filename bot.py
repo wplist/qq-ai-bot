@@ -549,9 +549,20 @@ class QQGLMBot:
         glm_in = data.get("glm") or {}
         if str(glm_in.get("api_key", "")).strip():
             self.cfg["glm"]["api_key"] = str(glm_in["api_key"]).strip()
-            runtime["glm"] = {"api_key": self.cfg["glm"]["api_key"]}
+            runtime.setdefault("glm", {})["api_key"] = self.cfg["glm"]["api_key"]
             self._rebuild_glm()
             changed.append("glm.api_key")
+        for field in ("base_url", "model"):
+            v = str(glm_in.get(field, "")).strip()
+            if not v:
+                continue
+            if field == "base_url" and not v.startswith(("http://", "https://")):
+                logging.warning("忽略非法 base_url: %s", v)
+                continue
+            self.cfg["glm"][field] = v
+            runtime.setdefault("glm", {})[field] = v
+            self._rebuild_glm()
+            changed.append(f"glm.{field}")
         if isinstance(data.get("admins"), list):
             admins = [int(a) for a in data["admins"] if str(a).strip().isdigit()]
             self.cfg["behavior"]["admin_users"] = admins
@@ -565,19 +576,21 @@ class QQGLMBot:
         return {"ok": True, "changed": changed}
 
     def test_glm(self, data: dict) -> dict:
-        key = str((data or {}).get("api_key", "")).strip() or self.cfg["glm"]["api_key"]
+        """按请求里的 base_url/model/api_key 组合测试（缺省项沿用当前配置）。"""
+        d = data or {}
         g = self.cfg["glm"]
-        client = self.glm
-        if key != g["api_key"]:  # 支持保存前先测新 Key
-            client = GLMClient(key, g["base_url"], g["model"], g["reasoning_effort"], g["max_tokens"], 60)
+        key = str(d.get("api_key", "")).strip() or g["api_key"]
+        base = str(d.get("base_url", "")).strip() or g["base_url"]
+        model = str(d.get("model", "")).strip() or g["model"]
 
         async def run_test() -> tuple[str, float]:
+            client = GLMClient(key, base, model, g["reasoning_effort"], g["max_tokens"], 60)
             t0 = time.time()
             return await client.ping(), round(time.time() - t0, 1)
 
         try:
             reply, secs = asyncio.run_coroutine_threadsafe(run_test(), self.loop).result(timeout=120)
-            return {"ok": True, "reply": reply, "seconds": secs}
+            return {"ok": True, "reply": reply, "seconds": secs, "model": model}
         except Exception as e:
             return {"ok": False, "message": str(e)}
 

@@ -10,7 +10,7 @@ from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
 
-VALID_EFFORTS = {"low", "high", "max"}
+VALID_EFFORTS = {"low", "high", "max", "auto"}
 
 
 class GLMError(Exception):
@@ -43,19 +43,25 @@ class GLMClient:
 
     async def chat(self, messages: list[dict]) -> str:
         """传入 OpenAI 格式的 messages，返回模型回复文本。失败抛 GLMError。"""
+        params: dict = {
+            "model": self.model,
+            "messages": messages,
+            "max_tokens": self.max_tokens,
+        }
+        if "glm" in self.model.lower():
+            # thinking/reasoning_effort 是 GLM 专属参数；
+            # 其它 OpenAI 兼容端点可能因未知字段报错，仅在 GLM 系模型时携带
+            effort = "low" if self.reasoning_effort == "auto" else self.reasoning_effort
+            params["extra_body"] = {
+                "thinking": {"type": "enabled"},
+                "reasoning_effort": effort,
+            }
         try:
-            resp = await self._client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                max_tokens=self.max_tokens,
-                extra_body={
-                    "thinking": {"type": "enabled"},
-                    "reasoning_effort": self.reasoning_effort,
-                },
-            )
+            resp = await self._client.chat.completions.create(**params)
         except Exception as e:
-            logger.warning("GLM 调用异常: %s", e)
-            raise GLMError("AI 服务暂时出了点问题，请稍后再试") from e
+            logger.warning("模型调用异常: %s", e)
+            # 带原因的提示便于控制台测试排查；聊天侧不会直接展示（_ask_glm 有固定文案）
+            raise GLMError(f"AI 调用失败：{str(e)[:150]}") from e
 
         content = ""
         if resp.choices:

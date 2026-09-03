@@ -69,15 +69,17 @@
     <div class="status-line" id="nc-result">测试后将显示当前登录的机器人小号</div>
   </div>
 
-  <!-- AI 接口 -->
+  <!-- AI 模型 -->
   <div class="card">
-    <h2>🧠 智谱 GLM API</h2>
-    <div class="row"><label>API Key</label><input type="password" id="glm-key" placeholder=""></div>
+    <h2>🧠 AI 模型（任意 OpenAI 兼容）</h2>
+    <div class="row"><label>访问 URL</label><input type="text" id="glm-url" placeholder="https://api.deepseek.com/v1"></div>
+    <div class="row"><label>模型名</label><input type="text" id="glm-model" placeholder="deepseek-chat"></div>
+    <div class="row"><label>API Key</label><input type="password" id="glm-key" placeholder="留空 = 沿用已保存的 Key"></div>
     <div class="row">
       <button id="btn-test-glm">测试</button>
       <button class="secondary" id="btn-save-glm">保存</button>
     </div>
-    <div class="status-line" id="glm-result">当前 Key 会以打码形式显示在状态区</div>
+    <div class="status-line" id="glm-result">改 URL + 模型名即可换任意 OpenAI 兼容模型（DeepSeek / Kimi / OpenAI / Ollama…）；测试与保存按上方填写值执行</div>
   </div>
 
   <!-- 管理员 -->
@@ -128,14 +130,16 @@ async function refresh() {
   $("status-detail").textContent =
     "机器人小号：" + (s.bot_qq || "未知") + "（" + (s.bot_name || "—") + "）\n" +
     "人格：" + s.persona.name + (s.persona.customized ? "（已自定义）" : "") +
-    " ｜ 模型：" + s.glm.model + "（effort=" + s.glm.effort + "）\n" +
-    "API Key：" + (s.glm.key_masked || "未配置 ⚠");
+    " ｜ 模型：" + s.glm.model + "\n" +
+    "端点：" + s.glm.base_url + " ｜ API Key：" + (s.glm.key_masked || "未配置 ⚠");
   $("status-extra").textContent =
     "运行 " + fmtMin(s.uptime_min) + " ｜ 会话 " + s.sessions + " 个 / " + s.messages + " 条记忆\n" +
     "群聊回复：" + (s.group_enabled ? "开" : "关") + " ｜ 私聊回复：" + (s.private_enabled ? "开" : "关");
   if (!$("ws-url").value) $("ws-url").value = s.napcat.ws_url;
-  if (!$("glm-key").placeholder.includes("****") && s.glm.key_masked)
-    $("glm-key").placeholder = "当前：" + s.glm.key_masked + "，输入新值替换";
+  if (!$("glm-url").value) $("glm-url").value = s.glm.base_url;
+  if (!$("glm-model").value) $("glm-model").value = s.glm.model;
+  if (s.glm.key_masked)
+    $("glm-key").placeholder = "留空 = 沿用已保存的 Key（" + s.glm.key_masked + "）";
   admins = s.admins || [];
   renderAdmins();
 }
@@ -189,20 +193,24 @@ bind("btn-save-nc", async () => {
 });
 
 bind("btn-test-glm", async () => {
-  $("glm-result").textContent = "调用 GLM-5.3 中，约需几秒…";
+  $("glm-result").textContent = "调用中，约需几秒…";
+  const body = { base_url: $("glm-url").value.trim(), model: $("glm-model").value.trim() };
   const key = $("glm-key").value.trim();
-  const r = await call("/test-glm", key ? { api_key: key } : {});
+  if (key) body.api_key = key;
+  const r = await call("/test-glm", body);
   $("glm-result").innerHTML = r.ok
-    ? '<span class="ok">✓ 成功</span>（' + r.seconds + 's）模型回复：' + r.reply
-    : '<span class="bad">✗ ' + r.message + "</span>";
+    ? '<span class="ok">✓ 成功</span>（' + r.seconds + 's · ' + (r.model || "") + '）模型回复：' + r.reply
+    : '<span class="bad">✗ ' + (r.message || "失败") + "</span>";
 });
 
 bind("btn-save-glm", async () => {
+  const glm = { base_url: $("glm-url").value.trim(), model: $("glm-model").value.trim() };
   const key = $("glm-key").value.trim();
-  if (!key) { alert("请先输入新的 API Key"); return; }
-  await call("/settings", { glm: { api_key: key } });
+  if (key) glm.api_key = key;
+  if (!glm.base_url || !glm.model) { alert("访问 URL 和模型名不能为空"); return; }
+  const r = await call("/settings", { glm });
   $("glm-key").value = "";
-  $("glm-result").innerHTML = '<span class="ok">✓ API Key 已保存并生效</span>';
+  $("glm-result").innerHTML = '<span class="ok">✓ 已保存并即时生效</span>（' + r.changed.join(", ") + "）";
   refresh();
 });
 
